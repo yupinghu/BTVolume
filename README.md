@@ -1,16 +1,17 @@
 # BTVolume
 
-Track per-device volume for Bluetooth media devices.
+Track per-device volume for Bluetooth media devices. For whatever reason on my Pixel 2, every time a
+headset/speaker/whatever connects, its volume is reset to some default amount. This app remembers
+the last volume it saw for a device and restores that volume whenever that device reconnects.
 
-For whatever reason, every time a headset/speaker/whatever connects, its volume is reset to some
-default amount. This app remembers the last volume it saw for a device and restores that volume
-whenever that device reconnects.
+This app is for Oreo and up; I haven't done the compatibility thing for older OSes because, well, I
+wrote it for my Pixel 2.
 
-Some notes:
-- The app tracks by device name; if you change the name or something, that breaks the memory.
-- Whenever a device is connected, a foreground service runs to get callbacks on volume changes.
-  This is a bit annoying -- in principle it should only need to check the volume when the device
-  disconnects -- but I couldn't get the timing right, by the time the device disconnect broadcast
-  happens, the volume has already reverted to the non-Bluetooth media volume.
+In principle, it should be possible to check the volume level as the device is disconnecting and
+store that. However, the CONNECTION_STATE_CHANGED action occurs too late, after the volume has
+already reverted to the internal speaker. So, instead, while an A2DP device is connected, there's
+a foreground service that receives MediaRouter callbacks on volume changes. It's a bit regrettable
+and I might eventually make this an option with a manual sync button.
 
-My employer doesn't permit me to publish apps on the Play Store, otherwise this would just go there.
+My employer doesn't permit me to publish apps on the Play Store, otherwise I would. But hey, open
+source, feel free to build and install it.

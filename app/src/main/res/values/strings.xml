@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">BT Volume</string>
     <string name="a2dp_prefs">com.example.yph.bt_volume.a2dp_prefs</string>
-    <string name="fg_service_notif_channel_name">FG Service Channel</string>
-    <string name="fg_service_notif_channel_description">FG Service Channel Description</string>
+    <string name="fg_service_notif_channel_name">Foreground Service Notification</string>
+    <string name="fg_service_notif_channel_description">When an A2DP device is paired, a foreground service runs to track volume changes.</string>
 </resources>
