@@ -22,44 +22,63 @@ import android.widget.TextView
  * Callback to detect when Bluetooth volume changes occur.
  */
 class MyMediaCallback(context : Context) : MediaRouter.SimpleCallback() {
-    private var prefKey : String? = null
-    private var requestSetVolumeCalled = false
-
+    private val mediaRouter = context.getSystemService(MediaRouter::class.java)
     private val prefs = context.getSharedPreferences(context.getString(R.string.a2dp_prefs),
             Context.MODE_PRIVATE)
 
-    private fun saveVolume(volume: Int) {
-        prefs.edit().putInt(prefKey, volume).apply()
+    private var prefKey : String? = null
+    private var initialVolume = -1
+    private var volume = -1
+
+    private fun saveVolume() {
+        if (volume >= 0 && volume != initialVolume) {
+            prefs.edit().putInt(prefKey, volume).apply()
+        }
     }
 
-    fun deviceConnecting(mediaRouter: MediaRouter, name: String, address: String) {
-        prefKey = "$name [$address]"
-        val volume = prefs.getInt(prefKey, -1)
-        if (volume >= 0) {
-            // Find the Bluetooth route and set its volume
-            var count = mediaRouter.routeCount
-            while (count > 0) {
-                --count
-                val route = mediaRouter.getRouteAt(count)
-                if (route.deviceType == MediaRouter.RouteInfo.DEVICE_TYPE_BLUETOOTH) {
-                    requestSetVolumeCalled = true
-                    route.requestSetVolume(volume)
-                }
+    private fun getRoute() : MediaRouter.RouteInfo? {
+        var count = mediaRouter.routeCount
+        while (count > 0) {
+            --count
+            val route = mediaRouter.getRouteAt(count)
+            if (route.deviceType == MediaRouter.RouteInfo.DEVICE_TYPE_BLUETOOTH) {
+                return route
             }
         }
+        return null
+    }
+
+    fun deviceConnecting(name: String, address: String) : String {
+        if (prefKey == null) {
+            // First time the key is set: register the callback
+            mediaRouter.addCallback(MediaRouter.ROUTE_TYPE_LIVE_AUDIO, this)
+        } else {
+            // We were already tracking another device, save it before we switch to new device
+            saveVolume()
+        }
+        prefKey = address
+        initialVolume = prefs.getInt(prefKey, -1)
+        volume = -1
+
+        val route = getRoute()
+        if (route != null && initialVolume >= 0) {
+            route.requestSetVolume(initialVolume)
+        }
+
+        return route?.name?.toString() ?: name
+    }
+
+    fun deviceDisconnecting() {
+        saveVolume()
+        prefKey = null
+        mediaRouter.removeCallback(this)
     }
 
     override fun onRouteVolumeChanged(router: MediaRouter?, info: MediaRouter.RouteInfo?) {
         super.onRouteVolumeChanged(router, info)
-        if (prefKey != null && info?.deviceType == MediaRouter.RouteInfo.DEVICE_TYPE_BLUETOOTH) {
-            val volume = info.volume
+        if (info?.deviceType == MediaRouter.RouteInfo.DEVICE_TYPE_BLUETOOTH) {
+            volume = info.volume
             Log.d("BTVolume", "Volume changed: $prefKey $volume")
-            if (requestSetVolumeCalled) {
-                Log.d("BTVolume", "requestSetVolume was previously called; ignoring this callback")
-                requestSetVolumeCalled = false
-            } else {
-                saveVolume(volume)
-            }
         }
     }
 }
@@ -69,8 +88,7 @@ class MyMediaCallback(context : Context) : MediaRouter.SimpleCallback() {
  * This service runs whenever there's an A2DP device connected.
  */
 class MyService : Service() {
-    // Track whether we've called startForeground.
-    private var fg = false
+    private var hasRun = false
 
     // The callback
     private lateinit var callback : MyMediaCallback
@@ -79,10 +97,6 @@ class MyService : Service() {
     private val channelId = "fg_service"
     private val notificationId = 1
 
-    // System Services
-    private lateinit var mediaRouter : MediaRouter
-    private lateinit var notificationManager : NotificationManager
-
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
@@ -90,48 +104,42 @@ class MyService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d("BTVolume", "Service created")
-
-        // Get System Services
-        mediaRouter = getSystemService(MediaRouter::class.java)
-        notificationManager = getSystemService(NotificationManager::class.java)
-
-        // Create the callback.
         callback = MyMediaCallback(this)
-        mediaRouter.addCallback(MediaRouter.ROUTE_TYPE_LIVE_AUDIO, callback)
-
-        // Create the notification channel if necessary
-        val existingChannel = notificationManager.getNotificationChannel(channelId)
-        if (existingChannel == null) {
-            val channelName = getString(R.string.fg_service_notif_channel_name)
-            val importance = NotificationManager.IMPORTANCE_LOW
-            val channel = NotificationChannel(channelId, channelName, importance)
-            channel.description = getString(R.string.fg_service_notif_channel_description)
-            channel.setShowBadge(false)
-            channel.lockscreenVisibility = Notification.VISIBILITY_SECRET
-            notificationManager.createNotificationChannel(channel)
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val extras = intent?.extras
-        val name : String
-        if (extras != null) {
+        val name = if (extras != null) {
             // Provide the device info to the callback
-            name = extras.getString("name")
-            callback.deviceConnecting(mediaRouter, name, extras.getString("address"))
+            callback.deviceConnecting(extras.getString("name"), extras.getString("address"))
         } else {
             // This shouldn't happen, but we need some valid string for the notification here.
-            name = "unknown device"
+            "unknown device"
         }
 
+        val notificationManager = getSystemService(NotificationManager::class.java)
         // Setup the foreground service notification.
         val notification = Notification.Builder(this, channelId)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle("Tracking volume for $name")
                 .build()
-        if (!fg) {
+
+        if (!hasRun) {
+            // Create the notification channel if necessary
+            val existingChannel = notificationManager.getNotificationChannel(channelId)
+            if (existingChannel == null) {
+                val channelName = getString(R.string.fg_service_notif_channel_name)
+                val importance = NotificationManager.IMPORTANCE_LOW
+                val channel = NotificationChannel(channelId, channelName, importance)
+                channel.description = getString(R.string.fg_service_notif_channel_description)
+                channel.setShowBadge(false)
+                channel.lockscreenVisibility = Notification.VISIBILITY_SECRET
+                notificationManager.createNotificationChannel(channel)
+            }
+
             startForeground(notificationId, notification)
-            fg = true
+
+            hasRun = true
         } else {
             notificationManager.notify(notificationId, notification)
         }
@@ -141,7 +149,7 @@ class MyService : Service() {
     }
 
     override fun onDestroy() {
-        getSystemService(MediaRouter::class.java).removeCallback(callback)
+        callback.deviceDisconnecting()
         Log.d("BTVolume", "Service onDestroy")
         super.onDestroy()
     }
