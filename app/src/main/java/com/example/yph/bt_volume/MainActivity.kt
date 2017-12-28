@@ -32,6 +32,7 @@ class MyMediaCallback(context : Context) : MediaRouter.SimpleCallback() {
 
     private fun saveVolume() {
         if (volume >= 0 && volume != initialVolume) {
+            Log.d("BTVolume", "Saving volume for $prefKey: $volume")
             prefs.edit().putInt(prefKey, volume).apply()
         }
     }
@@ -57,8 +58,11 @@ class MyMediaCallback(context : Context) : MediaRouter.SimpleCallback() {
             saveVolume()
         }
         prefKey = address
+
         initialVolume = prefs.getInt(prefKey, -1)
         volume = -1
+
+        Log.d("BTVolume", "Device connecting: $name $address with initial volume: $initialVolume")
 
         val route = getRoute()
         if (route != null && initialVolume >= 0) {
@@ -176,7 +180,7 @@ class MyReceiver() : BroadcastReceiver() {
             val address = device.address
             Log.d("BTVolume", "BroadcastReceiver: $type, $name, $address, $state")
             when (state) {
-                BluetoothProfile.STATE_CONNECTING -> {
+                BluetoothProfile.STATE_CONNECTED -> {
                     context?.startForegroundService(Intent(context, MyService::class.java)
                             .putExtra("name", name)
                             .putExtra("address", address))
