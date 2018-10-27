@@ -13,5 +13,4 @@ already reverted to the internal speaker. So, instead, while an A2DP device is c
 a foreground service that receives MediaRouter callbacks on volume changes. It's a bit regrettable
 and I might eventually make this an option with a manual sync button.
 
-My employer doesn't permit me to publish apps on the Play Store, otherwise I would. But hey, open
-source, feel free to build and install it.
+UPDATE: Pie finally incorporates this behavior, so this app is more or less useless. :)
